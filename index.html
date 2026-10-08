@@ -347,6 +347,13 @@
       </svg>
     );
 
+    const Search = ({ className = "w-5 h-5" }) => (
+      <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+    );
+
     const callGeminiAPI = async (payload, retries = 3) => {
       const apiKey = "";
       const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
@@ -751,11 +758,23 @@
         part2: [
           {
             question: 'Cho hàm số $y = x^3 - 3x^2 + 2$. Các phát biểu sau đúng hay sai?',
+            keepStatements: true,
             statements: [
               { label: 'a', text: 'Hàm số có đạo hàm $y\' = 3x^2 - 6x$.', isTrue: true },
               { label: 'b', text: 'Hàm số đạt cực đại tại $x = 0$.', isTrue: true },
               { label: 'c', text: 'Giá trị cực tiểu của hàm số bằng $2$.', isTrue: false },
               { label: 'd', text: 'Đồ thị hàm số nhận điểm $I(1; 0)$ làm tâm đối xứng.', isTrue: true }
+            ],
+            image: null
+          },
+          {
+            question: 'Cho hình chóp $S.ABCD$ có đáy $ABCD$ là hình vuông cạnh $a$, $SA \\perp (ABCD)$ và $SA = a\\sqrt{3}$. Các khẳng định sau đúng hay sai?',
+            keepStatements: false,
+            statements: [
+              { label: 'a', text: 'Thể tích khối chóp $S.ABCD$ bằng $\\frac{a^3\\sqrt{3}}{3}$.', isTrue: true },
+              { label: 'b', text: 'Tam giác $SBC$ là tam giác vuông tại $B$.', isTrue: true },
+              { label: 'c', text: 'Góc giữa đường thẳng $SC$ và mặt phẳng $(ABCD)$ bằng $60^\\circ$.', isTrue: false },
+              { label: 'd', text: 'Khoảng cách từ điểm $A$ đến mặt phẳng $(SBC)$ bằng $\\frac{a\\sqrt{3}}{2}$.', isTrue: true }
             ],
             image: null
           }
@@ -880,9 +899,23 @@
           });
         }
 
-        // Xáo Phần II: Xáo thứ tự câu và tráo 4 mệnh đề con a, b, c, d
+        // Xáo Phần II: Xáo thứ tự các câu lớn (ví dụ Câu 1 và Câu 2 đảo cho nhau)
         if (quiz.part2 && quiz.part2.length > 0) {
           quiz.part2 = shuffleArray(quiz.part2).map((q) => {
+            // Kiểm tra cấu hình riêng của TỪNG CÂU: nếu câu này được giáo viên tick cố định thì giữ nguyên ý a,b,c,d
+            const shouldKeepThisQuestionStatements = Boolean(q.keepStatements);
+            
+            if (shouldKeepThisQuestionStatements) {
+              // GIỮ NGUYÊN TUYỆT ĐỐI thứ tự các ý con a, b, c, d của câu này
+              return {
+                ...q,
+                statements: (q.statements || []).map((stmt, sIdx) => ({
+                  ...stmt,
+                  label: ['a', 'b', 'c', 'd'][sIdx] || stmt.label
+                }))
+              };
+            }
+            // Nếu câu này KHÔNG tick cố định thì xáo ngẫu nhiên 4 ý con a, b, c, d
             const labels = ['a', 'b', 'c', 'd'];
             const shuffledStatements = shuffleArray(q.statements || []).map((stmt, sIdx) => ({
               ...stmt,
@@ -1316,7 +1349,11 @@
         setQuizSubmitted(false);
         setStudentScoreResult(null);
         if (shouldShuffle) {
-          showToast(`Đã xáo trộn ngẫu nhiên đề thi! Bạn đang làm Mã đề: ${finalQuiz.examCode}`, 'success');
+          const keptCount = finalQuiz.part2?.filter(q => q.keepStatements).length || 0;
+          const part2Info = finalQuiz.isCTM2025 && keptCount > 0 
+            ? ` • Phần II: ${keptCount} câu cố định ý a,b,c,d` 
+            : '';
+          showToast(`Đã xáo trộn ngẫu nhiên đề thi! Mã đề: ${finalQuiz.examCode}${part2Info}`, 'success');
         }
       };
 
@@ -1860,7 +1897,7 @@
               <div className="bg-amber-50 p-3 rounded-xl border border-amber-200/70 text-[11px] text-amber-900 leading-relaxed">
                 🔑 <strong>Chỉ dành cho Giáo viên:</strong><br/>
                 • SĐT: <code className="font-mono bg-amber-100 px-1.5 py-0.5 rounded font-bold">**************</code><br/>
-                • Mật khẩu: <code className="font-mono bg-amber-100 px-1.5 py-0.5 rounded font-bold">***********</code>
+                • Mật khẩu: <code className="font-mono bg-amber-100 px-1.5 py-0.5 rounded font-bold">************</code>
               </div>
 
               <div className="flex items-center space-x-3 pt-2">
@@ -2224,9 +2261,16 @@
                     <div key={quiz.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3 flex flex-col justify-between">
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-md">
-                            Khối {quiz.grade} {quiz.isCTM2025 && '• CTM 2025'}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-md">
+                              Khối {quiz.grade} {quiz.isCTM2025 && '• CTM 2025'}
+                            </span>
+                            {quiz.isCTM2025 && quiz.part2 && (
+                              <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded border border-slate-200">
+                                {quiz.part2.filter(q => q.keepStatements).length}/{quiz.part2.length} câu cố định ý
+                              </span>
+                            )}
+                          </div>
                           <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
                             <Clock className="w-3.5 h-3.5" />
                             {quiz.duration} phút
@@ -2616,6 +2660,7 @@
       const [showQrModal, setShowQrModal] = useState(false);
       const [showProfileModal, setShowProfileModal] = useState(false);
       const [showHistoryModal, setShowHistoryModal] = useState(false);
+      const [searchQuizQuery, setSearchQuizQuery] = useState('');
 
       const [editName, setEditName] = useState(currentStudent?.name || '');
       const [editGrade, setEditGrade] = useState(currentStudent?.grade || '12');
@@ -2629,7 +2674,17 @@
         }
       }, [currentStudent]);
 
-      const gradeQuizzes = quizzes.filter(q => q.grade === studentGrade);
+      const gradeQuizzes = useMemo(() => {
+        return quizzes.filter(q => {
+          const matchGrade = q.grade === studentGrade;
+          if (!matchGrade) return false;
+          if (!searchQuizQuery.trim()) return true;
+          const query = searchQuizQuery.toLowerCase().trim();
+          const matchTitle = (q.title || '').toLowerCase().includes(query);
+          const matchDesc = (q.description || '').toLowerCase().includes(query);
+          return matchTitle || matchDesc;
+        });
+      }, [quizzes, studentGrade, searchQuizQuery]);
 
       const studentHistory = (submissionHistory || []).filter(
         s => (s.studentPhone && s.studentPhone === currentStudent?.phone) || s.studentName === currentStudent?.name
@@ -2764,7 +2819,7 @@
                   className="flex items-center justify-center space-x-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white px-3.5 py-2.5 rounded-xl text-xs font-bold shadow-md transition-all animate-pulse"
                 >
                   <Award className="w-4 h-4" />
-                  <span>Điều khoản Nâng cấp</span>
+                  <span>Điều khoản Nâng Cấp</span>
                 </button>
               )}
 
@@ -2796,7 +2851,10 @@
                 return (
                   <button
                     key={folder.gradeId}
-                    onClick={() => setStudentGrade(folder.gradeId)}
+                    onClick={() => {
+                      setStudentGrade(folder.gradeId);
+                      setSearchQuizQuery('');
+                    }}
                     className={`p-5 rounded-2xl border text-left transition-all relative overflow-hidden flex items-start space-x-4 ${
                       isActive 
                         ? 'ring-2 ring-indigo-600 bg-white border-indigo-600 shadow-md' 
@@ -2829,18 +2887,61 @@
           </div>
 
           <div className="space-y-4 pt-2">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
-                <Layers className="w-5 h-5 text-indigo-600" />
-                Đề Luyện Tập Trong Thư Mục Khối {studentGrade}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+              <h3 className="font-bold text-slate-900 text-base md:text-lg flex items-center gap-2">
+                <Layers className="w-5 h-5 text-indigo-600 shrink-0" />
+                <span>Đề Luyện Tập Trong Thư Mục Khối {studentGrade}</span>
+                <span className="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">
+                  {gradeQuizzes.length} đề
+                </span>
               </h3>
+
+              {/* Ô tìm kiếm đề thi theo tên */}
+              <div className="relative w-full sm:w-80">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <Search className="w-4 h-4" />
+                </div>
+                <input
+                  type="text"
+                  value={searchQuizQuery}
+                  onChange={(e) => setSearchQuizQuery(e.target.value)}
+                  placeholder="Tìm nhanh đề theo tên, từ khóa..."
+                  className="w-full bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl pl-9 pr-8 py-2 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                />
+                {searchQuizQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuizQuery('')}
+                    className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-slate-600"
+                    title="Xóa tìm kiếm"
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {gradeQuizzes.length === 0 ? (
               <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
                 <AlertCircle className="w-12 h-12 text-amber-400 mx-auto mb-3" />
-                <h4 className="font-bold text-slate-800 text-base">Thư mục Khối {studentGrade} chưa có đề thi nào</h4>
-                <p className="text-xs text-slate-500 mt-1">Giáo viên chưa cập nhật đề cho khối này.</p>
+                {searchQuizQuery.trim() ? (
+                  <>
+                    <h4 className="font-bold text-slate-800 text-base">Không tìm thấy đề thi phù hợp với từ khóa "{searchQuizQuery}"</h4>
+                    <p className="text-xs text-slate-500 mt-1">Vui lòng thử tìm từ khóa khác hoặc bấm xóa tìm kiếm để xem tất cả đề.</p>
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuizQuery('')}
+                      className="mt-3 px-4 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs transition"
+                    >
+                      Xem tất cả đề Khối {studentGrade}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <h4 className="font-bold text-slate-800 text-base">Thư mục Khối {studentGrade} chưa có đề thi nào</h4>
+                    <p className="text-xs text-slate-500 mt-1">Giáo viên chưa cập nhật đề cho khối này.</p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -2876,7 +2977,7 @@
                     <div className="pt-4 border-t border-slate-100 flex items-center justify-end space-x-2">
                       <button
                         onClick={() => startQuiz(quiz, false)}
-                        className="flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-xl border border-slate-300 transition-all"
+                        className="flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3.5 py-2 rounded-xl border border-slate-300 transition-all"
                         title="Làm đề thi theo đúng thứ tự câu và đáp án gốc"
                       >
                         <span>Làm Đề Gốc</span>
@@ -2884,7 +2985,7 @@
 
                       <button
                         onClick={() => startQuiz(quiz, true)}
-                        className="flex items-center space-x-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow-sm transition-all"
+                        className="flex items-center space-x-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-sm transition-all"
                         title="Tự động xáo trộn ngẫu nhiên thứ tự câu hỏi và phương án A, B, C, D kèm mã đề"
                       >
                         <Shuffle className="w-3.5 h-3.5 text-yellow-300" />
@@ -3082,7 +3183,7 @@
                   <div className="w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-1">
                     <Award className="w-7 h-7 text-amber-600" />
                   </div>
-                  <h3 className="text-xl font-bold text-slate-900">Nâng Cấp Tài Khoản VIP</h3>
+                  <h3 className="text-xl font-bold text-slate-900">Điều khoản Nâng Cấp </h3>
                   <p className="text-xs text-slate-500">Mở khóa toàn bộ đặc quyền học tập chỉ với 100.000đ/năm học!(Tính đến hết ngày 30/6/2027)</p>
                 </div>
 
@@ -3336,7 +3437,9 @@
                   <Award className="w-10 h-10 text-yellow-300" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold">Kết Quả Bài Làm Của Bạn</h3>
+                  <h3 className="text-xl font-bold">
+                    Kết quả bài làm của bạn: <span className="text-yellow-300 underline underline-offset-4">{currentStudent?.name || `Học sinh Khối ${quiz.grade}`}</span> là <span className="text-yellow-300 font-extrabold">{scoreResult.score}</span> điểm
+                  </h3>
                   <p className="text-xs text-emerald-100 mt-1">
                     Số điểm thành phần đã đạt: <strong>{scoreResult.correctCount} / {scoreResult.totalQuestions} phần</strong>
                   </p>
@@ -4029,7 +4132,9 @@
                   <Award className="w-10 h-10 text-yellow-300" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold">Kết Quả Bài Làm Của Bạn</h3>
+                  <h3 className="text-xl font-bold">
+                    Kết quả bài làm của bạn: <span className="text-yellow-300 underline underline-offset-4">{currentStudent?.name || `Học sinh Khối ${quiz.grade}`}</span> là <span className="text-yellow-300 font-extrabold">{scoreResult.score}</span> điểm
+                  </h3>
                   <p className="text-xs text-emerald-100 mt-1">
                     Số câu đúng: <strong>{scoreResult.correctCount} / {scoreResult.totalQuestions} câu</strong>
                   </p>
@@ -4668,6 +4773,19 @@
       const [grade, setGrade] = useState(editingQuiz ? editingQuiz.grade : '12');
       const [title, setTitle] = useState(editingQuiz ? editingQuiz.title : 'ĐỀ THI ÔN TẬP TOÁN THPT 2025 (Cấu Trúc Mới)');
       const [duration, setDuration] = useState(editingQuiz ? editingQuiz.duration : 90);
+
+      useEffect(() => {
+        if (editingQuiz) {
+          setGrade(editingQuiz.grade || '12');
+          setTitle(editingQuiz.title || '');
+          setDuration(editingQuiz.duration || 90);
+          setExamData({
+            part1: editingQuiz.part1 || [],
+            part2: editingQuiz.part2 || [],
+            part3: editingQuiz.part3 || []
+          });
+        }
+      }, [editingQuiz]);
       
       const [pdfText, setPdfText] = useState('');
       const [fileName, setFileName] = useState('');
@@ -4681,6 +4799,25 @@
       });
 
       const [editModalConfig, setEditModalConfig] = useState(null);
+
+      // Hàm bật/tắt cố định ý a,b,c,d riêng cho từng câu hỏi Phần II
+      const toggleKeepStatementsForQuestion = (index) => {
+        setExamData(prev => {
+          const list = [...prev.part2];
+          const currentVal = Boolean(list[index].keepStatements);
+          list[index] = { ...list[index], keepStatements: !currentVal };
+          return { ...prev, part2: list };
+        });
+        if (showToast) {
+          const isNowKept = !Boolean(examData.part2[index]?.keepStatements);
+          showToast(
+            isNowKept 
+              ? `Câu ${index + 1}: Đã BẬT cố định ý a, b, c, d (không xáo ý)` 
+              : `Câu ${index + 1}: Đã TẮT cố định (sẽ xáo ngẫu nhiên ý a, b, c, d)`,
+            'info'
+          );
+        }
+      };
 
       const openEditQuestion = (part, index) => {
         setEditModalConfig({
@@ -4907,7 +5044,7 @@ ${pdfText}
 
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">
                     <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                        <Folder className="w-4 h-4 text-indigo-600" /> Thư Mục Lưu & Đăng Đề
+                        <Folder className="w-4 h-4 text-indigo-600" /> Thư Mục Lưu & Cấu Hình Đề
                     </h2>
                     
                     <div>
@@ -4928,6 +5065,16 @@ ${pdfText}
                             type="number" value={duration} onChange={(e) => setDuration(e.target.value)}
                             className="w-full text-xs p-2.5 border font-semibold rounded-lg bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none"
                         />
+                    </div>
+
+                    <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-200 text-xs text-indigo-900 leading-relaxed">
+                        <div className="font-bold flex items-center gap-1.5 text-indigo-950 mb-1">
+                          <CheckCircle className="w-4 h-4 text-indigo-600" />
+                          <span>Cấu hình xáo ý cho từng câu:</span>
+                        </div>
+                        <p className="text-[11px] text-slate-600">
+                          Thầy/cô có thể tick chọn <b>"Cố định ý a,b,c,d"</b> trực tiếp trên từng câu riêng biệt ở Phần II bên phải. Câu nào cần kế thừa suy luận thì cố định, câu nào độc lập thì cho phép xáo!
+                        </p>
                     </div>
 
                     <button 
@@ -5051,35 +5198,65 @@ ${pdfText}
 
                             {examData.part2.length > 0 && (
                                 <div className="space-y-4 pt-4 border-t border-slate-200">
-                                    <div className="bg-emerald-50 p-2.5 rounded-lg border-l-4 border-emerald-600 flex justify-between items-center text-xs">
-                                        <h3 className="font-bold text-emerald-950">PHẦN II. Câu hỏi trắc nghiệm Đúng / Sai</h3>
+                                    <div className="bg-emerald-50 p-3 rounded-xl border-l-4 border-emerald-600 flex justify-between items-center text-xs">
+                                        <div>
+                                          <h3 className="font-bold text-emerald-950 text-sm">PHẦN II. Câu hỏi trắc nghiệm Đúng / Sai</h3>
+                                          <p className="text-[11px] text-slate-500 mt-0.5">Thầy/cô có thể cài đặt cố định hoặc cho phép xáo ý a, b, c, d độc lập cho từng câu bên dưới:</p>
+                                        </div>
                                         <span className="bg-emerald-200 text-emerald-900 font-bold px-2 py-0.5 rounded">{examData.part2.length} Câu</span>
                                     </div>
                                     <div className="space-y-4">
                                         {examData.part2.map((q, idx) => (
-                                            <div key={idx} className="p-4 border rounded-xl space-y-3 bg-slate-50/50 text-xs">
-                                                <div className="flex justify-between items-start gap-3">
-                                                    <div className="font-bold text-slate-800 flex-1">
-                                                        <span>Câu {idx + 1}: </span><MathText text={q.question} />
-                                                    </div>
-                                                    <div className="flex items-center space-x-1.5 shrink-0">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => openEditQuestion('part2', idx)}
-                                                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg font-bold text-[11px] flex items-center gap-1 transition"
-                                                            title="Sửa nội dung KaTeX và chọn lại Đúng/Sai"
-                                                        >
-                                                            <Edit3 className="w-3.5 h-3.5" /> Sửa KaTeX & Đáp án
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleDeleteQuestion('part2', idx)}
-                                                            className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition"
-                                                            title="Xóa câu hỏi"
-                                                        >
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
-                                                    </div>
+                                            <div key={idx} className="p-4 border-2 rounded-xl space-y-3 bg-slate-50/50 text-xs relative group border-slate-200 hover:border-indigo-300 transition-all">
+                                                {/* Thanh công cụ riêng biệt cho từng câu Phần II */}
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-200 bg-white p-2.5 rounded-lg shadow-2xs">
+                                                  <div className="flex items-center space-x-2">
+                                                    <span className="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded">
+                                                      Câu {idx + 1}
+                                                    </span>
+
+                                                    {/* Checkbox độc lập cho từng câu */}
+                                                    <label className="flex items-center space-x-2 cursor-pointer select-none bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-md border border-slate-300 transition">
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={Boolean(q.keepStatements)}
+                                                        onChange={() => toggleKeepStatementsForQuestion(idx)}
+                                                        className="w-4 h-4 text-emerald-600 rounded border-slate-400 focus:ring-emerald-500 cursor-pointer"
+                                                      />
+                                                      <span className="text-xs font-bold text-slate-800">
+                                                        Cố định ý a, b, c, d (Không xáo ý này)
+                                                      </span>
+                                                    </label>
+                                                  </div>
+
+                                                  <div className="flex items-center space-x-2">
+                                                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                                                      q.keepStatements ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-800 border border-amber-300'
+                                                    }`}>
+                                                      {q.keepStatements ? '✓ Cố định ý a,b,c,d' : '🔀 Cho phép xáo ý'}
+                                                    </span>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openEditQuestion('part2', idx)}
+                                                        className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg font-bold text-[11px] flex items-center gap-1 transition"
+                                                        title="Sửa nội dung KaTeX và chọn lại Đúng/Sai"
+                                                    >
+                                                        <Edit3 className="w-3.5 h-3.5" /> Sửa
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteQuestion('part2', idx)}
+                                                        className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                                                        title="Xóa câu hỏi"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                  </div>
+                                                </div>
+
+                                                <div className="font-bold text-slate-800 leading-relaxed text-sm pt-1">
+                                                    <MathText text={q.question} />
                                                 </div>
 
                                                 <ImagePasteBox 
@@ -5093,7 +5270,7 @@ ${pdfText}
                                                     {q.statements.map((s, sIdx) => (
                                                         <div key={sIdx} className="flex justify-between items-center text-slate-700 bg-white border border-slate-200 p-2 rounded-lg">
                                                             <div className="flex gap-2 items-start flex-1">
-                                                                <span className="font-bold">{s.label})</span>
+                                                                <span className="font-bold text-indigo-700">{s.label})</span>
                                                                 <MathText text={s.text} />
                                                             </div>
                                                             <span className={`font-bold shrink-0 ml-4 px-2 py-1 rounded text-[11px] ${s.isTrue ? 'text-emerald-700 bg-emerald-100 border border-emerald-200' : 'text-rose-700 bg-rose-100 border border-rose-200'}`}>
@@ -5296,6 +5473,32 @@ ${pdfText}
                     {/* PHẦN II: Sửa 4 mệnh đề a, b, c, d & Chọn Đúng/Sai */}
                     {editModalConfig.part === 'part2' && (
                       <div className="space-y-3 pt-2 border-t border-slate-100">
+                        {/* Checkbox chỉnh sửa ngay trong Modal */}
+                        <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-200 flex items-center justify-between">
+                          <label className="flex items-center space-x-2 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(editModalConfig.data.keepStatements)}
+                              onChange={(e) => {
+                                const val = e.target.checked;
+                                setEditModalConfig(prev => ({
+                                  ...prev,
+                                  data: { ...prev.data, keepStatements: val }
+                                }));
+                              }}
+                              className="w-4 h-4 text-emerald-600 rounded border-slate-400 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <span className="text-xs font-bold text-indigo-950">
+                              Cố định thứ tự các ý a, b, c, d của câu này khi xáo đề
+                            </span>
+                          </label>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                            editModalConfig.data.keepStatements ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-700'
+                          }`}>
+                            {editModalConfig.data.keepStatements ? 'Không xáo ý' : 'Có xáo ý'}
+                          </span>
+                        </div>
+
                         <label className="block text-xs font-bold text-slate-800">
                           4 Mệnh đề a, b, c, d và Khẳng định Đúng/Sai:
                         </label>
